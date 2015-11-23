@@ -2,7 +2,7 @@
 
 ![](https://raw.githubusercontent.com/edankwan/touch-leap-motion/master/app/images/screenshot.jpg)
 
-[Live demo](http://www.edankwan.com/experiments/touch/) | [Video](https://vimeo.com/145873783)
+[Live demo](http://www.edankwan.com/experiments/touch/) | [Video](https://www.youtube.com/watch?v=ws3DKUe5xPE)
 
 It is a WebGL demo using Leap Motion and signed distance field to simulate the physics.
 
