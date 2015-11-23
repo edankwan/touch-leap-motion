@@ -19,6 +19,8 @@ var WAGNER = require('@superguigui/wagner');
 var BloomPass = require('@superguigui/wagner/src/passes/bloom/MultiPassBloomPass');
 var VignettePass = require('@superguigui/wagner/src/passes/vignette/VignettePass');
 
+var mobile = require('./fallback/mobile');
+
 var undef;
 var _gui;
 var _stats;
@@ -260,6 +262,10 @@ function _render(dt) {
     _logo.style.display = ratio ? 'block' : 'none';
     _logo.style.webkitFilter = 'blur(' + blur + 'px)';
 
+    ratio = (0.8 + Math.pow(_initAnimation, 1.5) * 0.3);
+    if(_width < 580) ratio *= 0.5;
+    _logo.style.transform = 'scale3d(' + ratio + ',' + ratio + ',1)';
+
     for(var i = 0, len = _footerItems.length; i < len; i++) {
         ratio = _range(0.5 + i * 0.01, 0.6 + i * 0.01, _initAnimation);
         _footerItems[i].style.transform = 'translate3d(0,' + ((1 - Math.pow(ratio, 3)) * 50) + 'px,0)';
@@ -298,10 +304,14 @@ function _render(dt) {
 
 }
 
-var img = new Image();
-img.src = 'images/logo.png';
-if(img.width) {
-    init();
-} else {
-    img.onload = init;
-}
+
+
+mobile.pass(function() {
+    var img = new Image();
+    img.src = 'images/logo.png';
+    if(img.width) {
+        init();
+    } else {
+        img.onload = init;
+    }
+});

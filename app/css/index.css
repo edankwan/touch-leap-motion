@@ -16,6 +16,28 @@ body {
     box-sizing: border-box;
 }
 
+.mobile {
+    display: none;
+    position: absolute;
+    width: 100%;
+    top: 50%;
+    padding: 0 30px;
+
+    font-size: 14px;
+    color: #000;
+
+    transform: translate3d(0, -50%, 0);
+}
+
+.mobile span {
+    color: #333;
+    text-decoration: underline;
+}
+
+.mobile a {
+    color: #333;
+}
+
 .logo {
     position: absolute;
     left: 75%;
