@@ -185,7 +185,4 @@ module.exports = {
         ],
         width: 20.25
     },
-    pitch: function(){return this._pitch;},
-    yaw: function(){return this._yaw;},
-    roll: function(){return this._roll;}
-}
+};

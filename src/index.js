@@ -12,6 +12,7 @@ var ground = require('./leap/ground');
 var lights = require('./leap/lights');
 var particles = require('./leap/particles');
 var defaultHandData = require('./leap/defaultHandData');
+var gripHandData = require('./leap/gripHandData');
 
 var OrbitControls = require('./controls/OrbitControls');
 
@@ -43,13 +44,15 @@ var _passes = [];
 var _time = 0;
 var _initAnimation = 0;
 var _initZoomAnimation = 0;
+var _gripRatio = 0;
 
 var _logo;
 var _footerItems;
 
 var _ray = new THREE.Ray();
 var _isLog = false;
-var _hasMouseMoved = false;
+var _isDown = false;
+var _hasLeapUpdated = false;
 var _hasLeap = undef;
 var _prevHandData = undef;
 
@@ -83,6 +86,7 @@ function init() {
     _camera.position.set(0, 3000, 5000);
 
     _control = new OrbitControls( _camera, _renderer.domElement );
+    _control.noPan = true;
     _control.minDistance = 250;
     _control.minPolarAngle = 0.3;
     _control.maxPolarAngle = Math.PI / 2;
@@ -150,11 +154,20 @@ function init() {
     _gui.domElement.addEventListener('mousedown', _stopPropagation);
     _gui.domElement.addEventListener('touchstart', _stopPropagation);
 
-    // window.addEventListener('click', _onClick);
+    window.addEventListener('click', _onClick);
+    window.addEventListener('mousedown', _onDown);
+    window.addEventListener('touchstart', _bindTouch(_onDown));
     window.addEventListener('mousemove', _onMove);
     window.addEventListener('touchmove', _bindTouch(_onMove));
+    window.addEventListener('mouseup', _onUp);
+    window.addEventListener('touchend', _bindTouch(_onUp));
     window.addEventListener('resize', _onResize);
-    _onLeapUpdate({hands: [defaultHandData]}, true);
+
+    var defaultHand = _createInpterpolatedHandData(defaultHandData, gripHandData, {});
+    defaultHand.pitch = function(){return this._pitch;};
+    defaultHand.yaw = function(){return this._yaw;};
+    defaultHand.roll = function(){return this._roll;};
+    _onLeapUpdate({hands: [defaultHand]}, true);
     leap.loop(_onLeapUpdate);
 
     _time = Date.now();
@@ -163,9 +176,35 @@ function init() {
 
 }
 
-// function _onClick() {
-//     _isLog = true;
-// }
+function _createInpterpolatedHandData(data0, data1, target) {
+    var val0, val1;
+    for(var prop in data0) {
+        if(_hasOwn(data0, prop)) {
+            val0 = data0[prop];
+            val1 = data1[prop];
+            if(typeof val0 === 'object') {
+                target[prop] = _createInpterpolatedHandData(val0, val1, val0.length ? [] : {});
+            } else if(!isNaN(val0)) {
+                Object.defineProperty(target, prop, { get: _getLerpHandData.bind(null, data0, data1, prop) });
+            }
+        }
+    }
+    return target;
+}
+
+function _getLerpHandData(data0, data1, prop) {
+    var a = data0[prop];
+    var b = data1[prop];
+    return a + (b - a) * _gripRatio;
+}
+
+function _hasOwn(obj, prop){
+    return Object.prototype.hasOwnProperty.call(obj, prop);
+}
+
+function _onClick() {
+    _isLog = true;
+}
 
 function _stopPropagation(evt) {
     evt.stopPropagation();
@@ -177,10 +216,17 @@ function _bindTouch(func) {
     };
 }
 
+function _onDown() {
+    _isDown = true;
+}
+
 function _onMove(evt) {
     settings.mouse.x = (evt.pageX / _width) * 2 - 1;
     settings.mouse.y = -(evt.pageY / _height) * 2 + 1;
-    _hasMouseMoved = true;
+}
+
+function _onUp() {
+    _isDown = false;
 }
 
 function _onLeapUpdate(frame, isDefaultData) {
@@ -192,12 +238,14 @@ function _onLeapUpdate(frame, isDefaultData) {
 
         _prevHandData = frame.hands[0];
 
+        _hasLeapUpdated = true;
+
         if(_isLog) {
             _isLog = false;
-            // var hand = frame.hands[0];
+            var hand = frame.hands[0];
 
             // Record default hand data
-            //
+
             // var handData = {};
             // var fingers = handData.fingers = [];
             // var data;
@@ -216,9 +264,9 @@ function _onLeapUpdate(frame, isDefaultData) {
             // handData.palmPosition = hand.palmPosition;
             // console.log(JSON.stringify(handData, true, '    '));
 
-            //
+
             // Record static data for shadertoy test.
-            //
+
             // var count = 0;
             // var res = _hand.updateOutputMatrix();
             // var output = JSON.stringify(res, true, '    ');
@@ -292,11 +340,16 @@ function _render(dt) {
     _ray.origin.add( _ray.direction.multiplyScalar(distance));
 
     if(_hasLeap === undef) {
-        defaultHandData.palmVelocity[0] = (_ray.origin.x - _hand.position.x) * 20;
-        defaultHandData.palmVelocity[1] = (_ray.origin.y - _hand.position.y) * 20;
-        defaultHandData.palmVelocity[2] = (_ray.origin.z - _hand.position.z) * 20;
+        _gripRatio += ((_isDown ? 1 : 0) - _gripRatio) * 0.01 * dt;
+        defaultHandData.palmVelocity[0] = gripHandData.palmVelocity[0] = (_ray.origin.x - _hand.position.x) * 20;
+        defaultHandData.palmVelocity[1] = gripHandData.palmVelocity[1] = (_ray.origin.y - _hand.position.y) * 20;
+        defaultHandData.palmVelocity[2] = gripHandData.palmVelocity[2] = (_ray.origin.z - _hand.position.z) * 20;
         _hand.position.copy(_ray.origin);
+
     } else {
+        if(!_hasLeapUpdated) {
+            defaultHandData.palmVelocity[0] = defaultHandData.palmVelocity[1] = defaultHandData.palmVelocity[2] = 0;
+        }
         _hand.position.x -= _hand.position.x * 0.05;
         _hand.position.y -= _hand.position.y * 0.05;
         _hand.position.z -= _hand.position.z * 0.05;
@@ -353,7 +406,7 @@ function _render(dt) {
         _renderer.render(_scene, _camera);
     }
 
-    _hasMouseMoved = false;
+    _hasLeapUpdated = false;
 
 }
 
