@@ -190,8 +190,7 @@ function _onLeapUpdate(frame, isDefaultData) {
     }
     if (frame.hands && frame.hands.length) {
 
-        _hand.leapUpdate(_prevHandData = frame.hands[0]);
-
+        _prevHandData = frame.hands[0];
 
         if(_isLog) {
             _isLog = false;
@@ -291,13 +290,19 @@ function _render(dt) {
     _ray.direction.set( settings.mouse.x, settings.mouse.y, 0.5 ).unproject( _camera ).sub( _ray.origin ).normalize();
     var distance = _ray.origin.length() / Math.cos(Math.PI - _ray.direction.angleTo(_ray.origin));
     _ray.origin.add( _ray.direction.multiplyScalar(distance));
+
     if(_hasLeap === undef) {
+        defaultHandData.palmVelocity[0] = (_ray.origin.x - _hand.position.x) * 20;
+        defaultHandData.palmVelocity[1] = (_ray.origin.y - _hand.position.y) * 20;
+        defaultHandData.palmVelocity[2] = (_ray.origin.z - _hand.position.z) * 20;
         _hand.position.copy(_ray.origin);
+    } else {
+        _hand.position.x -= _hand.position.x * 0.05;
+        _hand.position.y -= _hand.position.y * 0.05;
+        _hand.position.z -= _hand.position.z * 0.05;
     }
 
-    if(_hasMouseMoved) {
-        _hand.leapUpdate(_prevHandData);
-    }
+    _hand.leapUpdate(_prevHandData);
 
     particles.update(dt);
     lights.update(dt, _camera);
@@ -327,7 +332,7 @@ function _render(dt) {
 
 
     var useComposer = false;
-    for(var i = 0, len = _passes.length; i < len; i++) {
+    for( i = 0, len = _passes.length; i < len; i++) {
         if(_passes[i].isActive) {
             useComposer = true;
             break;
