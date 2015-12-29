@@ -12,6 +12,8 @@ This demo uses the WebGL framework - [ThreeJS](http://threejs.org) and post-proc
 
 The prototype folder boilderplate was cloned from [codevember](https://github.com/mattdesl/codevember) by [Mattdesl](https://twitter.com/mattdesl)
 
+Hand test on [ShaderToy](https://www.shadertoy.com/view/4tSXDt)
+
 ## Development and deployment
 - dev: `node dev`
 - deploy: `node build`
