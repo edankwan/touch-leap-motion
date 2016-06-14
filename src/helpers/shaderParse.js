@@ -2,7 +2,7 @@ var THREE = require('three');
 
 var threeChunkRegExp = /\/\/\s?chunk\(\s?(\w+)\s?\);/g;
 var glslifyBugFixRegExp = /(_\d+_\d+)(_\d+_\d+)+/g;
-var glslifyGlobalRegExp = /GLOBAL_VAR_(.+)(_\d+_\d+)+/g;
+var glslifyGlobalRegExp = /GLOBAL_VAR_([^\.\)\;\,\s]+)(_\d+)/g;
 
 function _threeChunkParse(shader) {
     return shader.replace(threeChunkRegExp, _replaceThreeChunkFunc);

@@ -1,4 +1,3 @@
-var quickLoader = require('quick-loader');
 var dat = require('dat-gui');
 var Stats = require('stats.js');
 var css = require('dom-css');
@@ -13,12 +12,17 @@ var lights = require('./leap/lights');
 var particles = require('./leap/particles');
 var defaultHandData = require('./leap/defaultHandData');
 var gripHandData = require('./leap/gripHandData');
+var encode = require('mout/queryString/encode');
 
 var OrbitControls = require('./controls/OrbitControls');
 
-var WAGNER = require('@superguigui/wagner');
-var BloomPass = require('@superguigui/wagner/src/passes/bloom/MultiPassBloomPass');
-var VignettePass = require('@superguigui/wagner/src/passes/vignette/VignettePass');
+var fboHelper = require('./leap/fboHelper');
+var postprocessing = require('./leap/postprocessing/postprocessing');
+var vignette = require('./leap/postprocessing/vignette/vignette');
+var motionBlur = require('./leap/postprocessing/motionBlur/motionBlur');
+var fxaa = require('./leap/postprocessing/fxaa/fxaa');
+var vignette = require('./leap/postprocessing/vignette/vignette');
+var bloom = require('./leap/postprocessing/bloom/bloom');
 
 var mobile = require('./fallback/mobile');
 
@@ -35,11 +39,6 @@ var _scene;
 var _renderer;
 
 var _hand;
-var _bloomPass;
-var _vignettePass;
-
-var _composer;
-var _passes = [];
 
 var _time = 0;
 var _initAnimation = 0;
@@ -71,16 +70,18 @@ function init() {
     }
 
     _renderer = new THREE.WebGLRenderer({
-
+        premultipliedAlpha : false,
     });
-    _renderer.setClearColor(0xCCCCCC);
+    fboHelper.init(_renderer);
+
+    _renderer.setClearColor(0x0f1010);
     // _renderer.shadowMap.type = THREE.BasicShadowMap;
     _renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     _renderer.shadowMap.enabled = true;
     document.body.appendChild(_renderer.domElement);
 
     _scene = new THREE.Scene();
-    _scene.fog = new THREE.FogExp2( 0xCCCCCC, 0.001 );
+    _scene.fog = new THREE.FogExp2( 0x0f1010, 0.00075 );
 
     _camera = new THREE.PerspectiveCamera( 45, 1, 1, 3000);
     _camera.position.set(0, 3000, 5000);
@@ -96,6 +97,8 @@ function init() {
     settings.mouse = new THREE.Vector2(0,0);
     settings.mouse3d = _ray.origin;
 
+    postprocessing.init(_renderer, _scene, _camera);
+
     lights.init();
     _scene.add(lights.mesh);
 
@@ -109,44 +112,79 @@ function init() {
     _scene.add(particles.mesh);
 
 
-    _composer = new WAGNER.Composer( _renderer );
 
-    _bloomPass = new BloomPass({
-        blurAmount: 1,
-        applyZoomBlur: true,
-        zoomBlurStrength: 0.5
-    });
-    _passes.push(_bloomPass);
 
-    _vignettePass = new VignettePass(1, 0.3);
-    _vignettePass.isActive = true;
 
-    _passes.push(_vignettePass);
 
     _gui = new dat.GUI();
+    var simulatorGui = _gui.addFolder('Simulator');
+    simulatorGui.add(settings.query, 'amount', settings.amountList).onChange(function(){
+        if (confirm('It will restart the demo')) {
+            window.location.href = window.location.href.split('#')[0] + encode(settings.query).replace('?', '#');
+            window.location.reload();
+        }
+    });
+    simulatorGui.add(settings, 'gravity', -5, 20);
+    simulatorGui.add(settings, 'particlesFromY', 0, 500).name('from Y');
+    simulatorGui.add(settings, 'particlesYDynamicRange', -500, 500).name('y dynamic range');
+    simulatorGui.add(settings, 'particlesDropRadius', 0, 150).name('drop radius');
+    simulatorGui.add(settings, 'handBounceRatio', 0, 1).name('hand bounce');
+    simulatorGui.add(settings, 'handForce', 0, 0.1).name('hand force');
 
-    var particlesGui = _gui.addFolder('particles');
-    particlesGui.add(settings, 'gravity', -5, 20);
-    particlesGui.add(settings, 'particlesFromY', 0, 500).name('from Y');
-    particlesGui.add(settings, 'particlesYDynamicRange', -500, 500).name('y dynamic range');
 
-    particlesGui.add(settings, 'particlesDropRadius', 0, 150).name('drop radius');
-    particlesGui.add(settings, 'handBounceRatio', 0, 1).name('hand bounce');
-    particlesGui.add(settings, 'handForce', 0, 0.1).name('hand force');
+    var postprocessingGui = _gui.addFolder('Post-Processing');
+    postprocessingGui.add(settings, 'fxaa').listen();
 
-    var shadowGui = _gui.addFolder('environment');
-    // shadowGui.add(settings, 'lightSpeed', 0, 1);
-    shadowGui.add(settings, 'shadowDarkness', 0.1, 0.8);
+    motionBlur.maxDistance = 120;
+    motionBlur.motionMultiplier = 4;
+    var motionBlurControl = postprocessingGui.add(settings, 'motionBlur');
+    var motionMaxDistance = postprocessingGui.add(motionBlur, 'maxDistance', 1, 300).name('motion distance').listen();
+    var motionMultiplier = postprocessingGui.add(motionBlur, 'motionMultiplier', 0.1, 10).name('motion multiplier').listen();
+    var motionQuality = postprocessingGui.add({lineTexture: 'one third'}, 'lineTexture', ['full', 'half', 'one third', 'quarter']).name('motion quality').onChange(function(val){
+        if(val === 'full') {
+            motionBlur.linesRenderTargetScale = 1;
+        } else if(val === 'half') {
+            motionBlur.linesRenderTargetScale = 0.5;
+        } else if(val === 'one third') {
+            motionBlur.linesRenderTargetScale = 1 / 3;
+        } else {
+            motionBlur.linesRenderTargetScale = 0.25;
+        }
+        motionBlur.resize();
+    });
+    var fadeStrengthControl = postprocessingGui.add(motionBlur, 'fadeStrength', 1, 5).name('motion fade');
+    var opacityControl = postprocessingGui.add(motionBlur, 'opacity', 0, 1).name('motion opacity');
+    var jitterControl = postprocessingGui.add(motionBlur, 'jitter', 0, 1).name('motion jitter');
+    var controlList = [motionMaxDistance, motionMultiplier, motionQuality, fadeStrengthControl, opacityControl, jitterControl];
+    motionBlurControl.onChange(enableGuiControl.bind(this, controlList));
+    enableGuiControl(controlList, settings.motionBlur);
 
-    var ppGui = _gui.addFolder('post-processing');
-    ppGui.add(settings, 'bloomOpacity', 0, 1).name('bloom');
-    ppGui.add(_vignettePass, 'isActive').name('vignette');
+    var bloomControl = postprocessingGui.add(settings, 'bloom');
+    var bloomRadiusControl = postprocessingGui.add(bloom, 'blurRadius', 0, 3).name('bloom radius');
+    var bloomAmountControl = postprocessingGui.add(bloom, 'amount', 0, 3).name('bloom amount');
+    controlList = [bloomRadiusControl, bloomAmountControl];
+    bloomControl.onChange(enableGuiControl.bind(this, controlList));
+    enableGuiControl(controlList, settings.bloom);
 
-    // if(window.innerWidth > 512) {
-    //     particlesGui.open();
-    //     shadowGui.open();
-    //     ppGui.open();
-    // }
+    postprocessingGui.add(settings, 'vignette');
+
+    // postprocessingGui.open();
+
+
+    function enableGuiControl(controls, flag) {
+        controls = controls.length ? controls : [controls];
+        var control;
+        for(var i = 0, len = controls.length; i < len; i++) {
+            control = controls[i];
+            control.__li.style.pointerEvents = flag ? 'auto' : 'none';
+            control.domElement.parentNode.style.opacity = flag ? 1 : 0.1;
+        }
+    }
+    var preventDefault = function(evt){evt.preventDefault();this.blur();};
+    Array.prototype.forEach.call(_gui.domElement.querySelectorAll('input[type="checkbox"],select'), function(elem){
+        elem.onkeyup = elem.onkeydown = preventDefault;
+        elem.style.color = '#000';
+    });
 
     _logo = document.querySelector('.logo');
     _footerItems = document.querySelectorAll('.footer span');
@@ -242,7 +280,7 @@ function _onLeapUpdate(frame, isDefaultData) {
 
         if(_isLog) {
             _isLog = false;
-            var hand = frame.hands[0];
+            // var hand = frame.hands[0];
 
             // Record default hand data
 
@@ -292,19 +330,14 @@ function _onResize() {
     _width = window.innerWidth;
     _height = window.innerHeight;
 
-    _composer.setSize( _width, _height);
-
-    _camera.aspect = _width / _height;
-    _camera.updateProjectionMatrix();
-    _renderer.setSize(_width, _height);
-
+    postprocessing.resize(_width, _height);
 }
 
 function _loop() {
     var newTime = Date.now();
     raf(_loop);
     if(settings.useStats) _stats.begin();
-    _render(newTime - _time);
+    _render(newTime - _time, newTime);
     if(settings.useStats) _stats.end();
     _time = newTime;
 }
@@ -321,7 +354,7 @@ function _range(min, max, val) {
     return _clamp((val - min) / (max - min), 0, 1);
 }
 
-function _render(dt) {
+function _render(dt, newTime) {
 
     _initAnimation = Math.min(_initAnimation + dt * 0.0002, 1);
     _initZoomAnimation = Math.min(_initZoomAnimation + dt * 0.0001, 1);
@@ -375,36 +408,13 @@ function _render(dt) {
         _footerItems[i].style.transform = 'translate3d(0,' + ((1 - Math.pow(ratio, 3)) * 50) + 'px,0)';
     }
 
-    _vignettePass.params.boost = _lerp(1.1, 1, easedInitAnimation);
-    _vignettePass.params.reduction = _lerp(-0.1, 0.4, easedInitAnimation);
 
-    _bloomPass.blendPass.params.opacity =  _lerp(1, settings.bloomOpacity, easedInitAnimation);
-    _bloomPass.isActive = !!_bloomPass.blendPass.params.opacity;
+    fxaa.enabled = !!settings.fxaa;
+    motionBlur.enabled = !!settings.motionBlur;
+    vignette.enabled = !!settings.vignette;
+    bloom.enabled = !!settings.bloom;
 
-    lights.pointLight.shadowDarkness = settings.shadowDarkness;
-
-
-    var useComposer = false;
-    for( i = 0, len = _passes.length; i < len; i++) {
-        if(_passes[i].isActive) {
-            useComposer = true;
-            break;
-        }
-    }
-
-    _renderer.autoClearColor = true;
-
-    if(useComposer) {
-        _composer.reset();
-        _composer.render(_scene, _camera);
-
-        for(i = 0, len = _passes.length; i < len; i++) {
-            if(_passes[i].isActive) _composer.pass(_passes[i]);
-            _composer.toScreen();
-        }
-    } else {
-        _renderer.render(_scene, _camera);
-    }
+    postprocessing.render(dt, newTime);
 
     _hasLeapUpdated = false;
 

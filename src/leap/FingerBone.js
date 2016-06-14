@@ -1,4 +1,5 @@
 var settings = require('./settings');
+var MeshMotionMaterial = require('./postprocessing/motionBlur/MeshMotionMaterial');
 var THREE = require('three');
 var getMaterial = require('./skin').getMaterial;
 
@@ -17,11 +18,13 @@ function FingerBone(fingerIndex, fromNodeIndex, toNodeIndex) {
     this.nodeAdjustmentQuaternion = (new THREE.Quaternion()).setFromAxisAngle(new THREE.Vector3(1,0,0), -Math.PI / 2);
 
     this.bone = new THREE.Mesh(_getBoneGeometry(), getMaterial());
+    this.bone.motionMaterial = new MeshMotionMaterial();
     this.bone.castShadow = true;
     this.bone.receiveShadow = true;
     this.add(this.bone);
 
     this.node = new THREE.Mesh(_getNodeGeometry(), getMaterial());
+    this.node.motionMaterial = new MeshMotionMaterial();
     this.node.castShadow = true;
     this.node.receiveShadow = true;
     this.add(this.node);

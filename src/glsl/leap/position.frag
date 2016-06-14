@@ -30,7 +30,7 @@ void main() {
 
     float d = velocityInfo.w;
 
-    positionInfo.w -= 0.005;
+    positionInfo.w -= 0.01;
 
     if(positionInfo.w < 0.0) {
 

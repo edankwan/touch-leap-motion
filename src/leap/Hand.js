@@ -1,6 +1,7 @@
 var settings = require('./settings');
 var THREE = require('three');
 
+var MeshMotionMaterial = require('./postprocessing/motionBlur/MeshMotionMaterial');
 var FingerBone = require('./FingerBone');
 var getMaterial = require('./skin').getMaterial;
 
@@ -53,6 +54,7 @@ function _initFingers() {
 function _initPalm() {
     var geometry = new THREE.CylinderGeometry(1, 1, 1, 6);
     this.palm = new THREE.Mesh(geometry, getMaterial());
+    this.palm.motionMaterial = new MeshMotionMaterial();
     this.palm.castShadow = true;
     this.palm.receiveShadow = true;
     this.add(this.palm);

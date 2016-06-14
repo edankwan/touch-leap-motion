@@ -4,6 +4,8 @@ var THREE = require('three');
 var glslify = require('glslify');
 var shaderParse = require('../helpers/shaderParse');
 
+var undef;
+
 var _copyShader;
 var _velocityShader;
 var _positionShader;
@@ -18,11 +20,12 @@ var _fboScene;
 var _fboCamera;
 var _data;
 
-var TEXTURE_SIZE = exports.TEXTURE_SIZE = settings.textureSize;
-var AMOUNT = exports.AMOUNT = TEXTURE_SIZE * TEXTURE_SIZE;
+var AMOUNT = exports.AMOUNT = settings.simulatorTextureWidth * settings.simulatorTextureHeight;
 
 exports.init = init;
 exports.update = update;
+exports.positionRenderTarget = undef;
+exports.prevPositionRenderTarget = undef;
 
 function init(renderer, hand) {
 
@@ -50,7 +53,7 @@ function init(renderer, hand) {
 
     _copyShader = new THREE.ShaderMaterial({
         uniforms: {
-            resolution: { type: 'v2', value: new THREE.Vector2( TEXTURE_SIZE, TEXTURE_SIZE ) },
+            resolution: { type: 'v2', value: new THREE.Vector2( settings.simulatorTextureWidth, settings.simulatorTextureHeight ) },
             texture: { type: 't', value: null }
         },
         vertexShader: shaderParse(glslify('../glsl/leap/fbo.vert')),
@@ -61,12 +64,16 @@ function init(renderer, hand) {
         uniforms: {
             texturePosition: { type: 't', value: null },
             textureVelocity: { type: 't', value: null },
-            resolution: { type: 'v2', value: new THREE.Vector2( TEXTURE_SIZE, TEXTURE_SIZE ) },
+            resolution: { type: 'v2', value: new THREE.Vector2( settings.simulatorTextureWidth, settings.simulatorTextureHeight ) },
             data: { type: 'm4v', value: _data },
             handBounceRatio: { type: 'f', value: settings.handBounceRatio },
             handForce: { type: 'f', value: settings.handForce },
             gravity: { type: 'f', value: settings.gravity },
             palmVelocity: { type: 'v3', value: hand.palmVelocity }
+        },
+        defines: {
+            HAND_AMOUNT: settings.hands,
+            MATRIX_AMOUNT: settings.hands * 16
         },
         vertexShader: shaderParse(glslify('../glsl/leap/fbo.vert')),
         fragmentShader: shaderParse(glslify('../glsl/leap/velocity.frag')),
@@ -77,7 +84,7 @@ function init(renderer, hand) {
 
     _positionShader = new THREE.ShaderMaterial({
         uniforms: {
-            resolution: { type: 'v2', value: new THREE.Vector2( TEXTURE_SIZE, TEXTURE_SIZE ) },
+            resolution: { type: 'v2', value: new THREE.Vector2( settings.simulatorTextureWidth, settings.simulatorTextureHeight ) },
             texturePosition: { type: 't', value: null },
             textureVelocity: { type: 't', value: null },
             textureVelocity2: { type: 't', value: null },
@@ -85,6 +92,10 @@ function init(renderer, hand) {
             fromY: { type: 'f', value: settings.particlesFromY },
             yDynamicRange: { type: 'f', value: settings.particlesYDynamicRange },
             data: { type: 'm4v', value: _data }
+        },
+        defines: {
+            HAND_AMOUNT: settings.hands,
+            MATRIX_AMOUNT: settings.hands * 16
         },
         vertexShader: shaderParse(glslify('../glsl/leap/fbo.vert')),
         fragmentShader: shaderParse(glslify('../glsl/leap/position.frag')),
@@ -96,7 +107,7 @@ function init(renderer, hand) {
     _fboMesh = new THREE.Mesh( new THREE.PlaneBufferGeometry( 2, 2 ), _copyShader );
     _fboScene.add( _fboMesh );
 
-    _velocityRenderTarget = new THREE.WebGLRenderTarget( TEXTURE_SIZE, TEXTURE_SIZE, {
+    _velocityRenderTarget = new THREE.WebGLRenderTarget( settings.simulatorTextureWidth, settings.simulatorTextureHeight, {
         wrapS: THREE.RepeatWrapping,
         wrapT: THREE.RepeatWrapping,
         minFilter: THREE.NearestFilter,
@@ -110,7 +121,7 @@ function init(renderer, hand) {
     _copyTexture(_createVelocityTexture(), _velocityRenderTarget);
     _copyTexture(_velocityRenderTarget, _velocityRenderTarget2);
 
-    _positionRenderTarget = new THREE.WebGLRenderTarget(TEXTURE_SIZE, TEXTURE_SIZE, {
+    _positionRenderTarget = new THREE.WebGLRenderTarget(settings.simulatorTextureWidth, settings.simulatorTextureHeight, {
         wrapS: THREE.RepeatWrapping,
         wrapT: THREE.RepeatWrapping,
         minFilter: THREE.NearestFilter,
@@ -165,10 +176,10 @@ function _createVelocityTexture() {
     var a = new Float32Array( AMOUNT * 4 );
     for ( var i = 0, len = a.length; i < len; i += 4 ) {
         a[ i + 0 ] = 0;
-        a[ i + 1 ] = Math.random();
+        a[ i + 1 ] = -Math.random() * 10;
         a[ i + 2 ] = 0;
     }
-    var texture = new THREE.DataTexture( a, TEXTURE_SIZE, TEXTURE_SIZE, THREE.RGBAFormat, THREE.FloatType );
+    var texture = new THREE.DataTexture( a, settings.simulatorTextureWidth, settings.simulatorTextureHeight, THREE.RGBAFormat, THREE.FloatType );
     texture.minFilter = THREE.NearestFilter;
     texture.magFilter = THREE.NearestFilter;
     texture.needsUpdate = true;
@@ -191,7 +202,7 @@ function _createPositionTexture() {
         a[ i + 2 ] = Math.sin(angle) * radius;
         a[ i + 3 ] = 0.5 + Math.random();
     }
-    var texture = new THREE.DataTexture( a, TEXTURE_SIZE, TEXTURE_SIZE, THREE.RGBAFormat, THREE.FloatType );
+    var texture = new THREE.DataTexture( a, settings.simulatorTextureWidth, settings.simulatorTextureHeight, THREE.RGBAFormat, THREE.FloatType );
     texture.minFilter = THREE.NearestFilter;
     texture.magFilter = THREE.NearestFilter;
     texture.needsUpdate = true;
@@ -214,7 +225,9 @@ function update(dt) {
 
     _updatePosition(dt);
 
-    return _positionRenderTarget;
+    exports.positionRenderTarget = _positionRenderTarget;
+    exports.prevPositionRenderTarget = _positionRenderTarget2;
+
 }
 
 

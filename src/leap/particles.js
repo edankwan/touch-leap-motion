@@ -3,7 +3,9 @@ var THREE = require('three');
 
 var fbo = require('./fbo');
 var shaderParse = require('../helpers/shaderParse');
+var MeshMotionMaterial = require('./postprocessing/motionBlur/MeshMotionMaterial');
 var glslify = require('glslify');
+var mixIn = require('mout/object/mixIn');
 
 var undef;
 
@@ -14,6 +16,7 @@ exports.update = update;
 var _geometry;
 var _material;
 var _distanceMaterial;
+var _motionMaterial;
 
 function init(renderer, hands) {
 
@@ -32,12 +35,15 @@ function init(renderer, hands) {
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     mesh.customDistanceMaterial = _distanceMaterial;
+    mesh.motionMaterial = _motionMaterial;
 
 }
 
 function _initGeometry() {
 
-    var TEXTURE_SIZE = fbo.TEXTURE_SIZE;
+    var textureWidth = settings.simulatorTextureWidth;
+    var textureHeight = settings.simulatorTextureHeight;
+
     var AMOUNT = fbo.AMOUNT;
     _geometry = new THREE.BufferGeometry();
 
@@ -69,8 +75,8 @@ function _initGeometry() {
             positionFlip[ i9 + 6] = Math.sin(angle * 3);
             positionFlip[ i9 + 7] = Math.cos(angle * 3);
 
-            fboUV[ i6 + 0] = fboUV[ i6 + 2] = fboUV[ i6 + 4] = (i % TEXTURE_SIZE) / TEXTURE_SIZE;
-            fboUV[ i6 + 1 ] = fboUV[ i6 + 3 ] = fboUV[ i6 + 5 ] = ~~(i / TEXTURE_SIZE) / TEXTURE_SIZE;
+            fboUV[ i6 + 0] = fboUV[ i6 + 2] = fboUV[ i6 + 4] = (i % textureWidth) / textureHeight;
+            fboUV[ i6 + 1 ] = fboUV[ i6 + 3 ] = fboUV[ i6 + 5 ] = ~~(i / textureWidth) / textureHeight;
         }
     } else {
         position = new Float32Array(AMOUNT * 3);
@@ -78,32 +84,28 @@ function _initGeometry() {
         var i2;
         for( i = 0; i < AMOUNT; i++ ) {
             i2 = i * 2;
-            fboUV[ i2 + 0] = (i % TEXTURE_SIZE) / TEXTURE_SIZE;
-            fboUV[ i2 + 1 ] = ~~(i / TEXTURE_SIZE) / TEXTURE_SIZE;
+            fboUV[ i2 + 0] = (i % textureWidth) / textureHeight;
+            fboUV[ i2 + 1 ] = ~~(i / textureWidth) / textureHeight;
         }
     }
     _geometry.addAttribute( 'position', new THREE.BufferAttribute( position, 3 ));
     _geometry.addAttribute( 'fboUV', new THREE.BufferAttribute( fboUV, 2 ));
+
 }
 
 function _initMaterial() {
 
+    var uniforms =THREE.UniformsUtils.merge([
+        THREE.UniformsLib.common,
+        THREE.UniformsLib.fog,
+        THREE.UniformsLib.lights
+    ]);
+
     _material = new THREE.ShaderMaterial( {
-        uniforms: {
-            texturePosition: { type: 't', value: null },
-            flipRatio: { type: 'f', value: 0 },
-
-            fogDensity : { type: 'f', value: 0.00025 },
-            fogNear : { type: 'f', value: 1 },
-            fogFar : { type: 'f', value: 2000 },
-            fogColor : { type: 'c', value: new THREE.Color( 0xffffff ) },
-
-            shadowMap: { type: 'tv', value: [] },
-            shadowMapSize: { type: 'v2v', value: [] },
-            shadowBias : { type: 'fv1', value: [] },
-            shadowDarkness: { type: 'fv1', value: [] },
-            shadowMatrix : { type: 'm4v', value: [] }
-        },
+        uniforms: mixIn(uniforms, {
+            texturePosition: { type: 't', value: undef },
+            flipRatio: { type: 'f', value: 0 }
+        }),
         defines: {
             USE_BILLBOARD : settings.useBillboardParticle
         },
@@ -113,14 +115,15 @@ function _initMaterial() {
         blending: settings.useBillboardParticle ? THREE.NoBlending : THREE.NormalBlending,
         depthTest: true,
         depthWrite: true,
-        fog: true
+        fog: true,
+        lights: true
     });
 
 
     _distanceMaterial = new THREE.ShaderMaterial( {
         uniforms: {
             lightPos: { type: 'v3', value: new THREE.Vector3( 0, 0, 0 ) },
-            texturePosition: { type: 't', value: null },
+            texturePosition: { type: 't', value: undef },
             flipRatio: { type: 'f', value: 0 }
         },
         defines: {
@@ -132,15 +135,34 @@ function _initMaterial() {
         depthWrite: true,
         side: THREE.BackSide
     });
+
+    _motionMaterial = new MeshMotionMaterial( {
+        motionMultiplier: 0.1,
+        uniforms: {
+            texturePosition: { type: 't', value: undef },
+            texturePrevPosition: { type: 't', value: undef },
+            flipRatio: { type: 'f', value: 0 }
+        },
+        defines: {
+            USE_BILLBOARD : settings.useBillboardParticle
+        },
+        vertexShader: shaderParse(glslify('../glsl/leap/particleMotion.vert')),
+        depthTest: true,
+        depthWrite: true,
+        side: THREE.BackSide
+    });
 }
 
 function update() {
-    var positionRenderTarget = fbo.update(0);
-    mesh.material.uniforms.texturePosition.value = positionRenderTarget;
-    mesh.customDistanceMaterial.uniforms.texturePosition.value = positionRenderTarget;
+    fbo.update(0);
+    mesh.material.uniforms.texturePosition.value = fbo.positionRenderTarget;
+    mesh.customDistanceMaterial.uniforms.texturePosition.value = fbo.positionRenderTarget;
+    mesh.motionMaterial.uniforms.texturePosition.value = fbo.positionRenderTarget;
+    mesh.motionMaterial.uniforms.texturePrevPosition.value = fbo.prevPositionRenderTarget;
     if(settings.useBillboardParticle) {
         mesh.material.uniforms.flipRatio.value ^= 1;
         mesh.customDistanceMaterial.uniforms.flipRatio.value ^= 1;
+        mesh.motionMaterial.uniforms.flipRatio.value ^= 1;
     }
 
 }
